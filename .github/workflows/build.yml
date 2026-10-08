@@ -34,6 +34,43 @@ jobs:
         with: { name: lightbeam-linux, path: build/linux/x64/release/bundle }
       - uses: actions/upload-artifact@v4
         with: { name: lightbeam-android, path: build/app/outputs/flutter-apk/app-release.apk }
+      # Same web app served from https://<owner>.github.io/<repo>/ so phones
+      # (including iPhones) can open it with a working camera.
+      - run: flutter build web --release --no-web-resources-cdn --base-href "/${{ github.event.repository.name }}/" --output build/pages
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: build/pages }
+
+  # Direct phone download: .../releases/latest/download/LightBeam.apk
+  release-apk:
+    needs: web-linux-android
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: lightbeam-android }
+      - run: |
+          mv app-release.apk LightBeam.apk
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest LightBeam.apk --target "$GITHUB_SHA" \
+            --title "LightBeam (latest build)" \
+            --notes "Android: download LightBeam.apk on your phone and open it. Any phone: open the web app at https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  # Needs Settings > Pages > Source: GitHub Actions, once. Until then this
+  # job fails without failing the build.
+  pages:
+    needs: web-linux-android
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions: { pages: write, id-token: write }
+    environment: { name: github-pages, url: '${{ steps.deploy.outputs.page_url }}' }
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   windows:
     needs: test
