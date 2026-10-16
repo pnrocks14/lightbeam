@@ -18,5 +18,5 @@ void main(List<String> args) {
       for (final s in loop) 0.3 * s + (r.nextDouble() - 0.5) * 0.1,
   ];
   File(args[0]).writeAsBytesSync(m.wav(Float32List.fromList(audio)));
-  print('${chunks.length} chunks, ${(audio.length / m.sampleRate).toStringAsFixed(1)} s');
+  stdout.writeln('${chunks.length} chunks, ${(audio.length / m.sampleRate).toStringAsFixed(1)} s');
 }
