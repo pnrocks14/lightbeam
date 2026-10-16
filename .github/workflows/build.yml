@@ -12,7 +12,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
       - run: flutter pub get
-      - run: flutter analyze
+      # Problems also go out as annotations, readable without the raw log.
+      - run: |
+          flutter --version | head -1 | sed 's/^/::notice::/'
+          flutter analyze > analyze.txt 2>&1 || { grep -E ' • ' analyze.txt | sed 's/^/::error::/'; exit 1; }
       - run: flutter test
 
   web-linux-android:
