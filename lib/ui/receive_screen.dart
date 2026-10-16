@@ -10,7 +10,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/fountain.dart';
 import '../core/protocol.dart';
+import '../core/talkback.dart';
 import 'format.dart';
+import 'sound_io.dart';
 
 class ReceiveScreen extends StatefulWidget {
   const ReceiveScreen({super.key});
@@ -30,6 +32,11 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   TransferFile? _result;
   String? _error;
   int _failedAttempts = 0;
+  // Talk-back: chirp progress to a listening sender every few seconds.
+  final _voice = SoundOut();
+  bool _talkBack = true;
+  late final Timer _chirps =
+      Timer.periodic(const Duration(seconds: 4), (_) => _chirp());
   // Refreshes the panel once a second so "stalled" hints appear even when no
   // codes arrive at all.
   late final Timer _clock =
@@ -40,11 +47,27 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     super.initState();
     WakelockPlus.enable();
     _clock;
+    _chirps;
+  }
+
+  void _chirp() {
+    final id = _rx.fileId;
+    if (!_talkBack || _result != null || id == null || _voice.busy) return;
+    final idle = _rx.lastNewPacketAt == null
+        ? 0
+        : DateTime.now().difference(_rx.lastNewPacketAt!).inSeconds;
+    final struggling = idle >= 3 ||
+        (_rx.corruptScans > 3 && _rx.corruptScans * 5 > _rx.validScans);
+    _voice
+        .play([ProgressMessage(id, (_rx.progress * 100).floor(), struggling)])
+        .catchError((_) {});
   }
 
   @override
   void dispose() {
     _clock.cancel();
+    _chirps.cancel();
+    _voice.dispose();
     WakelockPlus.disable();
     _controller.dispose();
     _tick.dispose();
@@ -75,6 +98,13 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       final file = _rx.result();
       _controller.stop();
       HapticFeedback.heavyImpact();
+      final id = _rx.fileId;
+      if (_talkBack && id != null) {
+        // Said three times: the sender may be mid-way through listening.
+        _voice
+            .play(List.filled(3, DoneMessage(id)))
+            .catchError((_) {});
+      }
       setState(() => _result = file);
     } on FormatException catch (e) {
       _restartAfterFailure(e.message);
@@ -130,6 +160,16 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       appBar: AppBar(
         title: const Text('Receive'),
         actions: [
+          IconButton(
+            tooltip: _talkBack
+                ? 'Talk-back sound on (sender adapts its speed)'
+                : 'Talk-back sound off',
+            icon: Icon(_talkBack ? Icons.volume_up : Icons.volume_off),
+            onPressed: () {
+              setState(() => _talkBack = !_talkBack);
+              if (!_talkBack) _voice.stop();
+            },
+          ),
           IconButton(
             tooltip: 'Start over',
             icon: const Icon(Icons.restart_alt),

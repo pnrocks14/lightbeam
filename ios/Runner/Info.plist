@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LightBeam listens for short sound signals from the receiving device. Audio is never recorded or stored.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>LightBeam uses the camera to receive files from another screen.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

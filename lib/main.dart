@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'ui/receive_screen.dart';
 import 'ui/send_screen.dart';
+import 'ui/sound_screens.dart';
 
 void main() => runApp(const LightBeamApp());
 
@@ -69,6 +70,14 @@ class HomeScreen extends StatelessWidget {
                   subtitle: 'Point your camera at the sender',
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const ReceiveScreen())),
+                ),
+                const SizedBox(height: 16),
+                _ModeCard(
+                  icon: Icons.hearing_rounded,
+                  title: 'Listen',
+                  subtitle: 'Receive a short message by sound',
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const ListenScreen())),
                 ),
                 const SizedBox(height: 32),
                 const _HowItWorks(),
@@ -150,6 +159,11 @@ class _HowItWorks extends StatelessWidget {
           '4. The receiver peels the puzzle apart as frames arrive, and '
           'finishes the last pieces with Gaussian elimination, so it needs '
           'only a few percent more frames than the file has blocks.\n\n'
+          '5. Sound talks back. The receiver chirps its progress in 16 '
+          'tones (an acoustic modem, about 12 bytes a second). A sender '
+          'that listens slows down when the receiver struggles, speeds up '
+          'when it keeps up, and stops by itself when the file is done. '
+          'Short texts can travel by sound alone, with no camera at all.\n\n'
           'Tips: turn screen brightness up, avoid glare, fill the camera view '
           'with the code, and lower the speed if progress stalls.',
         ),

@@ -23,6 +23,8 @@ file ─▶ zlib ─▶ [name | SHA-256 | size | data] ─▶ K blocks
 | **Two-level integrity (v2)** | CRC-32 on every packet (every single-bit flip is caught) and SHA-256 on the whole file. If the final check ever fails, the receiver resets itself and keeps scanning. |
 | **Fast frames (v2)** | QR masks rotate with the packet number instead of being searched (8x faster), and frames swap on the display refresh with the next one prebuilt. |
 | **Defensive parsing (v2)** | Header sanity limits (64 MB, 2,900 B blocks), version-clash detection, safe file names, and clear hints when the camera stalls. |
+| **Sound talk-back (v3)** | A 16-tone acoustic modem (100 bit/s, CRC-16 per frame, decodes at 0 dB SNR). The receiver chirps its progress every 4 s; a sender with *Listen to the receiver* on backs off when the receiver struggles, speeds up while it keeps up, and stops when the file is verified. No pairing, still no radio. |
+| **Sound-only messages (v3)** | Texts up to 256 bytes travel by sound alone (Send → *Send a message by sound*, other device → *Listen*). Chunks loop, so the listener can join any time. |
 | **Quad mode** | 2×2 codes per frame for 4× throughput on large sender screens. |
 | **Fully offline web build** | CanvasKit and the zxing-wasm QR reader are bundled. The web app never contacts a CDN. |
 
@@ -49,6 +51,8 @@ Phone-to-phone at close range with screen brightness up is the fastest setup.
 | Web (any modern browser) | ✅ | ✅ webcam, works offline once served |
 | Windows, Linux (native) | ✅ | ➡️ use the web build in a browser (Flutter's camera plugins don't scan on these) |
 
+Sound needs a microphone on the listening side. Linux microphone input uses `parecord`/`pactl` (PulseAudio or PipeWire).
+
 ## Building
 
 ```bash
@@ -71,7 +75,7 @@ on GitHub Actions when you push this folder to a repository.
 ## Testing
 
 ```bash
-flutter test                         # 19 unit + fault-injection tests (Dart VM)
+flutter test                         # 33 unit, fault-injection and modem tests (Dart VM)
 flutter test --platform chrome       # same tests compiled to JavaScript
 dart run tool/qr_bench.dart          # QR generation speed per density
 dart run tool/degree_bench.dart      # fountain overhead: soliton vs dense
@@ -83,6 +87,8 @@ dart run tool/degree_bench.dart      # fountain overhead: soliton vs dense
 lib/core/base45.dart     RFC 9285 Base45
 lib/core/fountain.dart   PRNG, robust soliton, LT decoder (peeling + Gaussian)
 lib/core/protocol.dart   packet format, file container, encoder, receiver
+lib/core/sound.dart      16-tone FSK acoustic modem (modulator, streaming decoder)
+lib/core/talkback.dart   sound messages: progress, done, text chunks
 lib/ui/                  send / receive screens, QR painter
 web/zxing/               bundled zxing-wasm reader (Apache-2.0)
 ```
@@ -90,5 +96,4 @@ web/zxing/               bundled zxing-wasm reader (Apache-2.0)
 ## Ideas for v2
 
 - **Colour channels:** three QR codes drawn in red, green and blue on one frame for 3× density (needs a custom channel-splitting decoder).
-- **Back-channel by light:** the receiver shows a tiny QR with its missing-block count, so a phone sender can adapt speed.
 - **cimbar-style symbols:** shape-plus-colour cells instead of black and white modules, for around 100 KB/s.

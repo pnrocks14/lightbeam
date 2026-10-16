@@ -1,15 +1,18 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:qr/qr.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/protocol.dart';
+import '../core/talkback.dart';
 import 'format.dart';
 import 'qr_view.dart';
+import 'sound_io.dart';
+import 'sound_screens.dart';
 
 /// Bytes of file data per QR code. All multiples of 4 (fast XOR path).
 const densities = <int, String>{
@@ -45,10 +48,17 @@ class _SendScreenState extends State<SendScreen>
   double _fps = 10;
   bool _grid = false;
 
+  // Talk-back: the receiver's chirps, heard through the microphone.
+  final _ears = SoundIn();
+  bool _listen = false;
+  int? _rxPercent;
+  bool _rxDone = false;
+
   int get _codesPerFrame => _grid ? 4 : 1;
 
   @override
   void dispose() {
+    _ears.dispose();
     _ticker.dispose();
     WakelockPlus.disable();
     super.dispose();
@@ -71,17 +81,18 @@ class _SendScreenState extends State<SendScreen>
     }
   }
 
-  Future<void> _enterText() async {
+  Future<void> _enterText({bool bySound = false}) async {
     final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Send a message'),
+        title: Text(bySound ? 'Send a message by sound' : 'Send a message'),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: 6,
           minLines: 3,
+          maxLength: bySound ? maxSoundText : null,
           decoration: const InputDecoration(
               hintText: 'Text, a link, a password...',
               border: OutlineInputBorder()),
@@ -96,7 +107,18 @@ class _SendScreenState extends State<SendScreen>
         ],
       ),
     );
-    if (text == null || text.isEmpty) return;
+    if (text == null || text.isEmpty || !mounted) return;
+    if (bySound) {
+      try {
+        chunkText(text);
+      } catch (e) {
+        _toast('Too long for sound: keep it under $maxSoundText bytes.');
+        return;
+      }
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => SoundSendScreen(text)));
+      return;
+    }
     _start(TransferFile('message.txt', Uint8List.fromList(utf8.encode(text))));
   }
 
@@ -123,10 +145,51 @@ class _SendScreenState extends State<SendScreen>
       return false;
     }
     _framesShown = 0;
+    _rxPercent = null;
+    _rxDone = false;
+    _paused = false;
     _prefetched = null;
     _showNext();
     _nextDue = _now + _period;
     return true;
+  }
+
+  Future<void> _setListen(bool on) async {
+    setState(() => _listen = on);
+    if (!on) {
+      await _ears.stop();
+      return;
+    }
+    final error = await _ears.start(_onSound);
+    if (error != null) {
+      _toast(error);
+      if (mounted) setState(() => _listen = false);
+    }
+  }
+
+  /// A chirp from the receiver. Speed adapts like TCP: back off sharply
+  /// when it struggles, creep up while it keeps up.
+  void _onSound(SoundMessage m) {
+    final enc = _encoder;
+    if (enc == null || _rxDone) return;
+    if (m is DoneMessage && m.fileId == enc.fileId) {
+      HapticFeedback.heavyImpact();
+      setState(() {
+        _rxDone = true;
+        _rxPercent = 100;
+        _paused = true;
+      });
+      WakelockPlus.disable();
+    } else if (m is ProgressMessage && m.fileId == enc.fileId) {
+      setState(() {
+        _rxPercent = m.percent;
+        if (m.struggling) {
+          _fps = (_fps * 0.7).roundToDouble().clamp(3, 30);
+        } else if (_fps < 20) {
+          _fps += 1;
+        }
+      });
+    }
   }
 
   Duration get _period => Duration(microseconds: (1e6 / _fps).round());
@@ -209,6 +272,16 @@ class _SendScreenState extends State<SendScreen>
                 child: Text('Type a message', style: TextStyle(fontSize: 18)),
               ),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _enterText(bySound: true),
+              icon: const Icon(Icons.graphic_eq),
+              label: const Padding(
+                padding: EdgeInsets.all(14),
+                child: Text('Send a message by sound',
+                    style: TextStyle(fontSize: 18)),
+              ),
+            ),
             const SizedBox(height: 24),
             _settings(),
           ],
@@ -261,6 +334,15 @@ class _SendScreenState extends State<SendScreen>
                   _showNext();
                 }
               },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Listen to the receiver'),
+              subtitle: const Text('Uses the microphone. The receiver chirps '
+                  'its progress; speed adapts and sending stops when it is '
+                  'done.'),
+              value: _listen,
+              onChanged: _setListen,
             ),
             Text('Air rate: ${formatBytes(rate.round())}/s',
                 style: TextStyle(color: theme.colorScheme.primary)),
@@ -323,6 +405,19 @@ class _SendScreenState extends State<SendScreen>
             ],
           ),
         ),
+        if (_listen)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              _rxDone
+                  ? 'Receiver has the file. Sending stopped.'
+                  : _rxPercent == null
+                      ? 'Listening for the receiver...'
+                      : 'Receiver at $_rxPercent% · ${_fps.round()} frames/s',
+              style: theme.textTheme.titleSmall?.copyWith(
+                  color: _rxDone ? theme.colorScheme.primary : null),
+            ),
+          ),
         Text(
           'Keep this screen bright and steady. It loops until you stop it.',
           style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
